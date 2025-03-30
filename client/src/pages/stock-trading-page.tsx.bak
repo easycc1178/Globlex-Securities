@@ -1,0 +1,1047 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/hooks/use-auth';
+import { apiRequest } from '@/lib/queryClient';
+import { Stock, StockTrade } from '@shared/schema';
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { 
+  AlertCircle, 
+  ArrowDown, 
+  ArrowUp, 
+  Clock, 
+  TrendingDown, 
+  TrendingUp, 
+  ChevronUp, 
+  ChevronDown,
+  BarChart4,
+  Sparkles,
+  Timer
+} from 'lucide-react';
+import { formatThaiCurrency } from '@/lib/utils';
+import { z } from 'zod';
+import { useIsMobile } from '@/hooks/use-mobile';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
+import {
+  Drawer,
+  DrawerClose,
+  DrawerContent,
+  DrawerDescription,
+  DrawerFooter,
+  DrawerHeader,
+  DrawerTitle,
+  DrawerTrigger,
+} from "@/components/ui/drawer";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Progress } from '@/components/ui/progress';
+
+// นำเข้าไลบรารีสำหรับสร้างกราฟ
+import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler } from 'chart.js';
+import { Line } from 'react-chartjs-2';
+
+// ลงทะเบียนคอมโพเนนต์ที่จำเป็นสำหรับ Chart.js
+ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler);
+
+// ส่วนของ Stock Card ที่แสดงข้อมูลหุ้นแต่ละตัว
+function StockCard({ stock, onSelect }: { stock: Stock; onSelect: (stock: Stock) => void }) {
+  const isPositive = stock.change >= 0;
+  
+  return (
+    <Card 
+      className="cursor-pointer hover:border-primary transition-all shadow-sm"
+      onClick={() => onSelect(stock)}
+    >
+      <div className="flex items-center p-3 gap-3">
+        <div className="flex-shrink-0 w-12 h-12 flex items-center justify-center bg-muted rounded-md">
+          <span className="text-lg font-bold">{stock.symbol}</span>
+        </div>
+        
+        <div className="flex-grow overflow-hidden">
+          <div className="text-base font-bold truncate">{stock.name}</div>
+          <div className="text-lg font-bold">{formatThaiCurrency(stock.currentPrice)}</div>
+        </div>
+        
+        <div className="flex-shrink-0 flex flex-col items-end">
+          {isPositive ? (
+            <Badge className="bg-emerald-500 text-xs flex items-center gap-0.5 h-5 mb-1">
+              <TrendingUp className="h-3 w-3" />
+              {stock.changePercent.toFixed(2)}%
+            </Badge>
+          ) : (
+            <Badge variant="destructive" className="text-xs flex items-center gap-0.5 h-5 mb-1">
+              <TrendingDown className="h-3 w-3" />
+              {stock.changePercent.toFixed(2)}%
+            </Badge>
+          )}
+          
+          <div className={`text-xs ${isPositive ? 'text-emerald-500' : 'text-red-500'} flex items-center gap-1`}>
+            {isPositive ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+            {isPositive ? '+' : ''}{stock.change.toFixed(2)}
+          </div>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+// คอมโพเนนท์สำหรับแสดงกราฟหุ้น
+function StockChart({ stock }: { stock: Stock | null }) {
+  const [chartData, setChartData] = useState<any>(null);
+  
+  // สร้างข้อมูลจำลองสำหรับกราฟ (ในโปรดักชันจริงควรใช้ข้อมูลจริงจาก API)
+  useEffect(() => {
+    if (!stock) return;
+    
+    // สร้างข้อมูลราคาย้อนหลัง 30 นาที (1 จุดต่อนาที)
+    const generateStockPriceData = () => {
+      const prices = [];
+      const basePrice = stock.currentPrice;
+      const volatility = basePrice * 0.01; // ความผันผวน 1%
+      
+      for (let i = 30; i >= 0; i--) {
+        const randomFactor = Math.random() * 2 - 1; // สุ่มค่าระหว่าง -1 ถึง 1
+        const priceOffset = randomFactor * volatility;
+        const price = basePrice + priceOffset * (30 - i) / 10; // ทำให้ราคาเคลื่อนไหวมากขึ้นเมื่อใกล้ปัจจุบัน
+        prices.push(price);
+      }
+      
+      // แน่ใจว่าราคาล่าสุดตรงกับราคาปัจจุบันของหุ้น
+      prices[prices.length - 1] = basePrice;
+      
+      return prices;
+    };
+    
+    const prices = generateStockPriceData();
+    const labels = Array.from({ length: 31 }, (_, i) => `-${30 - i}m`);
+    labels[labels.length - 1] = 'Now';
+    
+    const isPositive = stock.change >= 0;
+    const gradientColor = isPositive ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)';
+    const borderColor = isPositive ? 'rgb(34, 197, 94)' : 'rgb(239, 68, 68)';
+    
+    setChartData({
+      labels,
+      datasets: [
+        {
+          label: `${stock.symbol} Price`,
+          data: prices,
+          fill: {
+            target: 'origin',
+            above: gradientColor,
+          },
+          borderColor: borderColor,
+          borderWidth: 2,
+          pointRadius: 0,
+          pointHoverRadius: 4,
+          tension: 0.4,
+        },
+      ],
+    });
+  }, [stock]);
+  
+  if (!stock || !chartData) return <div className="h-40 flex justify-center items-center">กำลังโหลดข้อมูล...</div>;
+  
+  const options = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: {
+        display: false,
+      },
+      tooltip: {
+        callbacks: {
+          label: function(context: any) {
+            return `${context.dataset.label}: ${formatThaiCurrency(context.parsed.y)}`;
+          }
+        }
+      }
+    },
+    scales: {
+      x: {
+        grid: {
+          display: false,
+        },
+        ticks: {
+          maxRotation: 0,
+          autoSkip: true,
+          maxTicksLimit: 6,
+        }
+      },
+      y: {
+        grid: {
+          color: 'rgba(0, 0, 0, 0.05)',
+        },
+        ticks: {
+          callback: function(value: any) {
+            return formatThaiCurrency(value);
+          }
+        }
+      }
+    },
+    interaction: {
+      intersect: false,
+      mode: 'index' as const,
+    },
+    animation: {
+      duration: 1000,
+    },
+  };
+  
+  return (
+    <div className="h-60">
+      <Line data={chartData} options={options} />
+    </div>
+  );
+}
+
+// ส่วนของหน้าต่างเทรดแบบพับเปิดที่แสดงหลังจากคลิกที่หุ้น
+function StockTradingDrawer({ 
+  isOpen,
+  onClose,
+  stock,
+  onTrade
+}: { 
+  isOpen: boolean;
+  onClose: () => void;
+  stock: Stock | null;
+  onTrade: (data: { stockId: number; direction: 'up' | 'down'; amount: number; duration: number }) => void;
+}) {
+  const [amount, setAmount] = useState<string>('100');
+  const [direction, setDirection] = useState<'up' | 'down'>('up');
+  const [duration, setDuration] = useState<number>(90);
+  const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+  const isMobile = useIsMobile();
+  
+  const multiplier = duration === 300 ? 2.6 : 1.8;
+  const potentialPayout = parseFloat(amount) * multiplier;
+  
+  useEffect(() => {
+    if (!isOpen) {
+      // Reset form when drawer closes
+      setAmount('100');
+      setDirection('up');
+      setDuration(90);
+      setIsConfirmOpen(false);
+    }
+  }, [isOpen]);
+  
+  const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value.replace(/[^0-9]/g, '');
+    setAmount(value);
+  };
+  
+  const handleSubmit = () => {
+    if (!stock) return;
+    setIsConfirmOpen(true);
+  };
+  
+  const handleConfirmTrade = () => {
+    if (!stock) return;
+    
+    onTrade({
+      stockId: stock.id,
+      direction,
+      amount: parseFloat(amount),
+      duration
+    });
+    
+    setIsConfirmOpen(false);
+    onClose();
+  };
+  
+  if (!stock) return null;
+  
+  const isPositive = stock.change >= 0;
+  
+  // ใช้ drawer แบบครึ่งหน้าจอทั้งโมบายและเดสก์ท็อป
+  return (
+    <>
+      <Drawer open={isOpen} onOpenChange={onClose}>
+        <DrawerContent className="max-h-[80vh]">
+          <div className="max-w-md mx-auto">
+            <DrawerHeader className="p-3 pb-0">
+              <div className="flex justify-between items-center mb-1">
+                <div className="flex items-center gap-2">
+                  <div className="flex-shrink-0 w-10 h-10 flex items-center justify-center bg-muted rounded-md">
+                    <span className="text-base font-bold">{stock.symbol}</span>
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-base font-semibold truncate max-w-[150px]">{stock.name}</span>
+                    <span className={`text-sm ${isPositive ? 'text-emerald-500' : 'text-red-500'}`}>
+                      {formatThaiCurrency(stock.currentPrice)}
+                      <span className="ml-1 text-xs">
+                        {isPositive ? '+' : ''}{stock.change.toFixed(2)}
+                      </span>
+                    </span>
+                  </div>
+                </div>
+                {isPositive ? (
+                  <Badge className="bg-emerald-500 text-xs h-5">
+                    <TrendingUp className="h-3 w-3 mr-1" />
+                    {stock.changePercent.toFixed(2)}%
+                  </Badge>
+                ) : (
+                  <Badge variant="destructive" className="text-xs h-5">
+                    <TrendingDown className="h-3 w-3 mr-1" />
+                    {stock.changePercent.toFixed(2)}%
+                  </Badge>
+                )}
+              </div>
+            </DrawerHeader>
+            
+            <ScrollArea className="px-4 pb-4 h-[calc(80vh-140px)]">
+              <div className="py-2">
+                <StockChart stock={stock} />
+              </div>
+              
+              <div className="mt-2">
+                <div className="mb-3">
+                  <label className="text-xs font-medium mb-1 block">จำนวนเงิน</label>
+                  <Input 
+                    value={amount}
+                    onChange={handleAmountChange} 
+                    placeholder="ใส่จำนวนเงิน" 
+                    className="text-right h-9 text-sm"
+                  />
+                  <div className="grid grid-cols-4 gap-1 mt-1">
+                    <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setAmount('100')}>฿100</Button>
+                    <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setAmount('500')}>฿500</Button>
+                    <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setAmount('1000')}>฿1K</Button>
+                    <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setAmount('5000')}>฿5K</Button>
+                  </div>
+                </div>
+                
+                <div className="mb-3">
+                  <label className="text-xs font-medium mb-1 block">ระยะเวลา</label>
+                  <div className="grid grid-cols-3 gap-1">
+                    <Button 
+                      variant={duration === 90 ? "default" : "outline"}
+                      className={`h-16 p-1 ${duration === 90 ? "bg-primary" : ""}`}
+                      onClick={() => setDuration(90)}
+                    >
+                      <div className="flex flex-col items-center">
+                        <Timer className="h-3 w-3 mb-1" />
+                        <span className="text-xs font-semibold">90 วินาที</span>
+                        <span className="text-[10px]">x1.8</span>
+                      </div>
+                    </Button>
+                    <Button 
+                      variant={duration === 120 ? "default" : "outline"}
+                      className={`h-16 p-1 ${duration === 120 ? "bg-primary" : ""}`}
+                      onClick={() => setDuration(120)}
+                    >
+                      <div className="flex flex-col items-center">
+                        <Timer className="h-3 w-3 mb-1" />
+                        <span className="text-xs font-semibold">120 วินาที</span>
+                        <span className="text-[10px]">x1.8</span>
+                      </div>
+                    </Button>
+                    <Button 
+                      variant={duration === 300 ? "default" : "outline"}
+                      className={`h-16 p-1 ${duration === 300 ? "bg-primary" : ""}`}
+                      onClick={() => setDuration(300)}
+                    >
+                      <div className="flex flex-col items-center">
+                        <Timer className="h-3 w-3 mb-1" />
+                        <span className="text-xs font-semibold">300 วินาที</span>
+                        <span className="text-[10px]">x2.6</span>
+                      </div>
+                    </Button>
+                  </div>
+                </div>
+                
+                <div className="mb-3">
+                  <label className="text-xs font-medium mb-1 block">ราคาจะ</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button
+                      variant={direction === 'up' ? 'default' : 'outline'}
+                      className={`flex flex-col items-center gap-1 py-3 ${direction === 'up' ? 'bg-emerald-500 hover:bg-emerald-600' : ''}`}
+                      onClick={() => setDirection('up')}
+                    >
+                      <ChevronUp className="h-6 w-6" />
+                      <span className="text-sm font-semibold">ขึ้น</span>
+                    </Button>
+                    <Button
+                      variant={direction === 'down' ? 'default' : 'outline'}
+                      className={`flex flex-col items-center gap-1 py-3 ${direction === 'down' ? 'bg-red-500 hover:bg-red-600' : ''}`}
+                      onClick={() => setDirection('down')}
+                    >
+                      <ChevronDown className="h-6 w-6" />
+                      <span className="text-sm font-semibold">ลง</span>
+                    </Button>
+                  </div>
+                </div>
+                
+                <div className="rounded-lg border p-3 bg-muted/50 mb-4">
+                  <div className="flex justify-between mb-1">
+                    <span className="text-xs">จำนวนเงินเทรด:</span>
+                    <span className="font-semibold text-sm">{formatThaiCurrency(parseFloat(amount) || 0)}</span>
+                  </div>
+                  <div className="flex justify-between mb-1">
+                    <span className="text-xs">อัตราจ่าย:</span>
+                    <span className="font-semibold text-sm">x{multiplier}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-xs">ได้รับเงินเมื่อชนะ:</span>
+                    <span className="font-bold text-primary text-sm">{formatThaiCurrency(potentialPayout)}</span>
+                  </div>
+                </div>
+              </div>
+            </ScrollArea>
+            
+            <div className="p-3 flex gap-2 border-t">
+              <Button onClick={handleSubmit} className="flex-1 h-10 text-sm">เริ่มการเทรด</Button>
+              <DrawerClose asChild>
+                <Button variant="outline" className="h-10 text-sm">ยกเลิก</Button>
+              </DrawerClose>
+            </div>
+          </div>
+        </DrawerContent>
+      </Drawer>
+      
+      <AlertDialog open={isConfirmOpen} onOpenChange={setIsConfirmOpen}>
+        <AlertDialogContent className="max-w-xs">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-base">ยืนยันการเทรด</AlertDialogTitle>
+            <AlertDialogDescription className="text-sm">
+              คุณกำลังจะเทรดหุ้น {stock.symbol} โดยเลือกว่าราคาจะ{direction === 'up' ? 'สูงขึ้น' : 'ลดลง'}
+              ใน {duration} วินาที ด้วยเงิน {formatThaiCurrency(parseFloat(amount) || 0)}
+              <br />
+              <br />
+              หากคุณชนะ คุณจะได้รับเงิน {formatThaiCurrency(potentialPayout)}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="h-9 text-xs">ยกเลิก</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmTrade} className="h-9 text-xs">ยืนยัน</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
+}
+
+/* <Button 
+                    variant={duration === 90 ? "default" : "outline"}
+                    className={duration === 90 ? "bg-primary" : ""}
+                    onClick={() => setDuration(90)}
+                  >
+                    <div className="flex flex-col items-center">
+                      <Timer className="h-4 w-4 mb-1" />
+                      <span className="text-sm font-semibold">90 วินาที</span>
+                      <span className="text-xs">x1.8</span>
+                    </div>
+                  </Button>
+                  <Button 
+                    variant={duration === 120 ? "default" : "outline"}
+                    className={duration === 120 ? "bg-primary" : ""}
+                    onClick={() => setDuration(120)}
+                  >
+                    <div className="flex flex-col items-center">
+                      <Timer className="h-4 w-4 mb-1" />
+                      <span className="text-sm font-semibold">120 วินาที</span>
+                      <span className="text-xs">x1.8</span>
+                    </div>
+                  </Button>
+                  <Button 
+                    variant={duration === 300 ? "default" : "outline"}
+                    className={duration === 300 ? "bg-primary" : ""}
+                    onClick={() => setDuration(300)}
+                  >
+                    <div className="flex flex-col items-center">
+                      <Timer className="h-4 w-4 mb-1" />
+                      <span className="text-sm font-semibold">300 วินาที</span>
+                      <span className="text-xs">x2.6</span>
+                    </div>
+                  </Button>
+                </div>
+              </div>
+            </div>
+            
+            <div>
+              <div className="mb-4">
+                <label className="text-sm font-medium mb-1 block">ราคาจะ</label>
+                <div className="grid grid-cols-2 gap-4">
+                  <Button
+                    variant={direction === 'up' ? 'default' : 'outline'}
+                    className={`flex flex-col items-center gap-1 py-6 ${direction === 'up' ? 'bg-green-500 hover:bg-green-600' : ''}`}
+                    onClick={() => setDirection('up')}
+                  >
+                    <ChevronUp className="h-8 w-8" />
+                    <span className="text-lg font-semibold">ขึ้น</span>
+                  </Button>
+                  <Button
+                    variant={direction === 'down' ? 'default' : 'outline'}
+                    className={`flex flex-col items-center gap-1 py-6 ${direction === 'down' ? 'bg-red-500 hover:bg-red-600' : ''}`}
+                    onClick={() => setDirection('down')}
+                  >
+                    <ChevronDown className="h-8 w-8" />
+                    <span className="text-lg font-semibold">ลง</span>
+                  </Button>
+                </div>
+              </div>
+              
+              <div className="rounded-lg border p-4 bg-muted/50">
+                <div className="flex justify-between mb-2">
+                  <span>จำนวนเงินเทรด:</span>
+                  <span className="font-semibold">{formatThaiCurrency(parseFloat(amount) || 0)}</span>
+                </div>
+                <div className="flex justify-between mb-2">
+                  <span>อัตราจ่าย:</span>
+                  <span className="font-semibold">x{multiplier}</span>
+                </div>
+                <div className="flex justify-between text-lg">
+                  <span>ได้รับเงินเมื่อชนะ:</span>
+                  <span className="font-bold text-primary">{formatThaiCurrency(potentialPayout)}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <DialogFooter className="mt-4">
+            <Button variant="outline" onClick={onClose}>ยกเลิก</Button>
+            <Button onClick={handleSubmit} size="lg">เริ่มการเทรด</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      
+      <AlertDialog open={isConfirmOpen} onOpenChange={setIsConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>ยืนยันการเทรด</AlertDialogTitle>
+            <AlertDialogDescription>
+              คุณกำลังจะเทรดหุ้น {stock.symbol} โดยเลือกว่าราคาจะ{direction === 'up' ? 'สูงขึ้น' : 'ลดลง'}
+              ใน {duration} วินาที ด้วยเงิน {formatThaiCurrency(parseFloat(amount) || 0)}
+              <br />
+              <br />
+              หากคุณชนะ คุณจะได้รับเงิน {formatThaiCurrency(potentialPayout)}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>ยกเลิก</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmTrade}>ยืนยัน</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
+}
+
+// ส่วนแสดงเทรดที่กำลังดำเนินอยู่
+function ActiveTradeCard({ trade, stock }: { trade: StockTrade; stock: Stock | null }) {
+  const [timeLeft, setTimeLeft] = useState<number>(0);
+  const [progress, setProgress] = useState<number>(0);
+  
+  useEffect(() => {
+    if (!trade || !trade.startTime) return;
+    
+    const startTime = new Date(trade.startTime).getTime();
+    const duration = trade.duration * 1000;
+    const endTime = startTime + duration;
+    
+    const interval = setInterval(() => {
+      const now = new Date().getTime();
+      const remaining = Math.max(0, endTime - now);
+      const elapsed = now - startTime;
+      const progressValue = Math.min(100, (elapsed / duration) * 100);
+      
+      setTimeLeft(Math.ceil(remaining / 1000));
+      setProgress(progressValue);
+      
+      if (remaining <= 0) {
+        clearInterval(interval);
+      }
+    }, 100);
+    
+    return () => clearInterval(interval);
+  }, [trade]);
+  
+  if (!trade || !stock) return null;
+  
+  return (
+    <Card className="mb-3">
+      <CardHeader className="p-3 pb-0">
+        <div className="flex justify-between items-center">
+          <div>
+            <CardTitle className="text-base">{stock.symbol}</CardTitle>
+            <CardDescription className="text-xs">{trade.direction === 'up' ? 'สูงขึ้น' : 'ลดลง'} • {trade.duration} วินาที</CardDescription>
+          </div>
+          <div className="flex items-center gap-2">
+            <Clock className="h-4 w-4" />
+            <span className="font-mono">{timeLeft}s</span>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="p-3">
+        <Progress value={progress} className="h-2 mb-2" />
+        <div className="flex justify-between text-sm">
+          <div>
+            <div>ราคาเริ่มต้น: <span className="font-medium">{trade.startPrice.toFixed(2)}</span></div>
+            <div>จำนวนเงิน: <span className="font-medium">{formatThaiCurrency(trade.amount)}</span></div>
+          </div>
+          <div className="text-right">
+            <div>ราคาปัจจุบัน: <span className="font-medium">{stock.currentPrice.toFixed(2)}</span></div>
+            <div>รับเมื่อชนะ: <span className="font-medium">{formatThaiCurrency(trade.potentialPayout)}</span></div>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ส่วนแสดงประวัติการเทรด
+function TradeHistoryCard({ trade, stock }: { trade: StockTrade; stock: Stock | null }) {
+  if (!trade || !stock) return null;
+  
+  const isWin = trade.status === 'win';
+  
+  return (
+    <Card className={`mb-3 border-l-4 ${isWin ? 'border-l-green-500' : 'border-l-red-500'}`}>
+      <CardHeader className="p-3 pb-0">
+        <div className="flex justify-between items-center">
+          <div>
+            <CardTitle className="text-base">{stock.symbol}</CardTitle>
+            <CardDescription className="text-xs">
+              {trade.direction === 'up' ? 'สูงขึ้น' : 'ลดลง'} • {trade.duration} วินาที
+            </CardDescription>
+          </div>
+          <Badge variant={isWin ? 'success' : 'destructive'}>
+            {isWin ? 'ชนะ' : 'แพ้'}
+          </Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="p-3">
+        <div className="flex justify-between text-sm">
+          <div>
+            <div>ราคาเริ่มต้น: <span className="font-medium">{trade.startPrice.toFixed(2)}</span></div>
+            <div>จำนวนเงิน: <span className="font-medium">{formatThaiCurrency(trade.amount)}</span></div>
+          </div>
+          <div className="text-right">
+            <div>ราคาสิ้นสุด: <span className="font-medium">{trade.endPrice?.toFixed(2) || '-'}</span></div>
+            <div>{isWin ? 'ได้รับเงิน' : 'เสียเงิน'}: <span className="font-medium">
+              {isWin ? formatThaiCurrency(trade.payoutAmount || 0) : formatThaiCurrency(trade.amount)}
+            </span></div>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ส่วนแสดงหน้าต่างนับถอยหลังเมื่อเริ่มการเทรด แบบมี Effect ที่น่าตื่นเต้น
+function CountdownDialog({ 
+  isOpen, 
+  onClose,
+  seconds,
+  direction,
+  stock
+}: { 
+  isOpen: boolean; 
+  onClose: () => void;
+  seconds: number;
+  direction: 'up' | 'down';
+  stock: Stock | null;
+}) {
+  const [timeLeft, setTimeLeft] = useState(seconds);
+  const [progress, setProgress] = useState(100);
+  
+  // Effect สำหรับนับถอยหลัง
+  useEffect(() => {
+    if (!isOpen) {
+      setTimeLeft(seconds);
+      setProgress(100);
+      return;
+    }
+    
+    if (timeLeft <= 0) {
+      onClose();
+      return;
+    }
+    
+    const timer = setTimeout(() => {
+      setTimeLeft(prev => prev - 1);
+    }, 1000);
+    
+    // คำนวณ progress bar
+    setProgress((timeLeft / seconds) * 100);
+    
+    return () => clearTimeout(timer);
+  }, [isOpen, timeLeft, seconds, onClose]);
+  
+  if (!isOpen || !stock) return null;
+  
+  // กำหนดสีตามทิศทางของการเทรด
+  const directionColor = direction === 'up' ? 'green' : 'red';
+  const directionText = direction === 'up' ? 'ขึ้น' : 'ลง';
+  const Icon = direction === 'up' ? ChevronUp : ChevronDown;
+  
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose} modal={true}>
+      <DialogContent className="sm:max-w-md p-0 overflow-hidden border-0 bg-gradient-to-b from-slate-900 to-slate-800 text-white">
+        <div className="relative py-10 px-6 flex flex-col items-center justify-center">
+          {/* Effect แสดงก่อนที่จะเริ่มเทรด */}
+          <div className="absolute inset-0 overflow-hidden">
+            <div className="absolute inset-0 opacity-10">
+              {Array.from({ length: 20 }).map((_, i) => (
+                <div 
+                  key={i}
+                  className="absolute animate-float opacity-40 rounded-full"
+                  style={{
+                    width: `${Math.random() * 20 + 10}px`,
+                    height: `${Math.random() * 20 + 10}px`,
+                    left: `${Math.random() * 100}%`,
+                    top: `${Math.random() * 100}%`,
+                    backgroundColor: direction === 'up' ? '#22c55e' : '#ef4444',
+                    animationDuration: `${Math.random() * 3 + 2}s`,
+                    animationDelay: `${Math.random() * 2}s`
+                  }}
+                />
+              ))}
+            </div>
+          </div>
+          
+          {/* ข้อมูลหุ้น */}
+          <div className="mb-6 flex items-center gap-2">
+            <Badge className="text-lg py-1 px-3 bg-slate-700">
+              {stock.symbol}
+            </Badge>
+            <span className="text-lg font-medium">{formatThaiCurrency(stock.currentPrice)}</span>
+          </div>
+          
+          {/* ตัวนับเวลาแบบมีเอฟเฟกต์ */}
+          <div className="relative w-32 h-32 flex items-center justify-center mb-4">
+            <svg className="w-full h-full" viewBox="0 0 100 100">
+              <circle 
+                cx="50" 
+                cy="50" 
+                r="45" 
+                fill="none" 
+                stroke="#334155" 
+                strokeWidth="8"
+              />
+              <circle 
+                cx="50" 
+                cy="50" 
+                r="45" 
+                fill="none" 
+                stroke={direction === 'up' ? '#22c55e' : '#ef4444'} 
+                strokeWidth="8"
+                strokeDasharray="283"
+                strokeDashoffset={283 - (283 * progress) / 100}
+                strokeLinecap="round"
+                transform="rotate(-90 50 50)"
+                className="transition-all duration-1000 ease-in-out"
+              />
+              <text 
+                x="50" 
+                y="50" 
+                dominantBaseline="middle" 
+                textAnchor="middle" 
+                fontSize="32" 
+                fontWeight="bold"
+                fill="white"
+                className="animate-pulse"
+              >
+                {timeLeft}
+              </text>
+            </svg>
+            
+            {/* ไอคอนทิศทาง อนิเมชั่น */}
+            <div className="absolute -bottom-6 p-2 rounded-full animate-bounce" 
+                 style={{ backgroundColor: direction === 'up' ? '#22c55e' : '#ef4444' }}>
+              <Icon className="h-6 w-6" />
+            </div>
+          </div>
+          
+          {/* ข้อความเทรด */}
+          <div className="text-2xl font-bold mb-4 flex items-center gap-2">
+            <span style={{ color: direction === 'up' ? '#22c55e' : '#ef4444' }}>
+              คาดว่าราคาจะ{directionText}
+            </span>
+          </div>
+          
+          {/* Animation effect - ระบบกำลังประมวลผล */}
+          <div className="flex items-center gap-3 text-lg text-slate-300">
+            <Sparkles className="h-5 w-5 animate-spin text-yellow-400" />
+            <span>กำลังเริ่มการเทรด</span>
+            <span className="flex space-x-1">
+              <span className="animate-bounce delay-0">.</span>
+              <span className="animate-bounce delay-150">.</span>
+              <span className="animate-bounce delay-300">.</span>
+            </span>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// หน้าหลักของการเทรดหุ้น
+export default function StockTradingPage() {
+  const { user } = useAuth();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [selectedStock, setSelectedStock] = useState<Stock | null>(null);
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isCountdownOpen, setIsCountdownOpen] = useState(false);
+  const [countdownDirection, setCountdownDirection] = useState<'up' | 'down'>('up');
+  const isMobile = useIsMobile();
+  
+  // Query สำหรับดึงข้อมูลหุ้นทั้งหมด
+  const stocksQuery = useQuery({
+    queryKey: ['/api/stocks'],
+    enabled: !!user,
+  });
+  
+  // Query สำหรับดึงข้อมูลบัญชีของผู้ใช้
+  const accountQuery = useQuery({
+    queryKey: ['/api/account'],
+    enabled: !!user,
+  });
+  
+  // Query สำหรับดึงข้อมูลเทรดที่กำลังดำเนินอยู่
+  const activeTradesQuery = useQuery({
+    queryKey: ['/api/stock-trades/active'],
+    enabled: !!user,
+    refetchInterval: 5000, // รีเฟรชทุก 5 วินาที
+  });
+  
+  // Query สำหรับดึงประวัติการเทรดทั้งหมด
+  const tradesHistoryQuery = useQuery({
+    queryKey: ['/api/stock-trades'],
+    enabled: !!user,
+  });
+  
+  // Mutation สำหรับสร้างการเทรดใหม่
+  const createTradeMutation = useMutation({
+    mutationFn: async (data: { stockId: number; direction: 'up' | 'down'; amount: number; duration: number }) => {
+      return apiRequest('/api/stock-trades', 'POST', data);
+    },
+    onSuccess: () => {
+      toast({
+        title: 'เริ่มการเทรดสำเร็จ',
+        description: 'ระบบกำลังประมวลผลการเทรดของคุณ',
+      });
+      
+      // รีเฟรชข้อมูลที่เกี่ยวข้อง
+      queryClient.invalidateQueries({ queryKey: ['/api/account'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/stock-trades/active'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/stock-trades'] });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'เกิดข้อผิดพลาด',
+        description: error.message || 'ไม่สามารถเริ่มการเทรดได้ กรุณาลองใหม่อีกครั้ง',
+        variant: 'destructive',
+      });
+    },
+  });
+  
+  const handleSelectStock = (stock: Stock) => {
+    setSelectedStock(stock);
+    setIsDialogOpen(true);
+  };
+  
+  const handleCloseTradingDialog = () => {
+    setIsDialogOpen(false);
+    setTimeout(() => setSelectedStock(null), 300);
+  };
+  
+  const handleTrade = (data: { stockId: number; direction: 'up' | 'down'; amount: number; duration: number }) => {
+    setCountdownDirection(data.direction);
+    setIsCountdownOpen(true);
+    
+    // Submit the trade after a short delay to show countdown animation
+    setTimeout(() => {
+      createTradeMutation.mutate(data);
+      
+      // Close countdown after a few seconds
+      setTimeout(() => {
+        setIsCountdownOpen(false);
+      }, 2000);
+    }, 3000);
+  };
+  
+  // ค้นหาข้อมูลหุ้นจาก ID
+  const findStockById = (id: number) => {
+    if (!stocksQuery.data || !Array.isArray(stocksQuery.data)) return null;
+    return stocksQuery.data.find((s: Stock) => s.id === id);
+  };
+  
+  // แสดงข้อความโหลดหากข้อมูลยังไม่พร้อม
+  if (stocksQuery.isLoading || accountQuery.isLoading) {
+    return (
+      <div className="container mx-auto py-6 px-4 max-w-screen-lg">
+        <div className="flex flex-col items-center justify-center py-12">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mb-4"></div>
+          <p className="text-lg text-muted-foreground">กำลังโหลดข้อมูล...</p>
+        </div>
+      </div>
+    );
+  }
+  
+  // แสดงข้อความเมื่อมีข้อผิดพลาด
+  if (stocksQuery.isError || accountQuery.isError) {
+    return (
+      <div className="container mx-auto py-6 px-4 max-w-screen-lg">
+        <div className="flex flex-col items-center justify-center py-12">
+          <AlertCircle className="h-12 w-12 text-destructive mb-4" />
+          <p className="text-lg text-destructive mb-2">เกิดข้อผิดพลาดในการโหลดข้อมูล</p>
+          <p className="text-muted-foreground">กรุณาลองใหม่อีกครั้ง</p>
+        </div>
+      </div>
+    );
+  }
+  
+  // Ensure data has the correct shape with proper type assertions
+  const account = (accountQuery.data as { balance: number }) || { balance: 0 };
+  const stocks = Array.isArray(stocksQuery.data) ? stocksQuery.data : [] as Stock[];
+  const activeTrades = Array.isArray(activeTradesQuery.data) ? activeTradesQuery.data : [] as StockTrade[];
+  const tradesHistory = Array.isArray(tradesHistoryQuery.data) ? tradesHistoryQuery.data : [] as StockTrade[];
+  
+  return (
+    <div className="container mx-auto py-4 px-4">
+      <div className="flex flex-col justify-between items-start mb-4 gap-2">
+        <div>
+          <h1 className="text-xl font-bold mb-1">เทรดหุ้นทันที</h1>
+          <p className="text-muted-foreground text-sm">เลือกหุ้นที่คุณต้องการและเริ่มเทรดได้ทันที</p>
+        </div>
+        <Card className="w-full shadow-sm">
+          <CardContent className="p-3">
+            <div className="text-sm text-muted-foreground">ยอดเงินของคุณ</div>
+            <div className="text-xl font-bold">{formatThaiCurrency(account.balance)}</div>
+          </CardContent>
+        </Card>
+      </div>
+      
+      <div className="grid grid-cols-1 gap-4">
+        <div>
+          <Card className="shadow-sm">
+            <CardHeader className="pb-2 p-3">
+              <CardTitle className="text-base">รายการหุ้น</CardTitle>
+              <CardDescription className="text-xs">เลือกหุ้นที่ต้องการเทรด</CardDescription>
+            </CardHeader>
+            <CardContent className="p-3">
+              <ScrollArea className="h-[350px] pr-2 pb-1">
+                <div className="flex flex-col gap-2">
+                  {stocks.map((stock: Stock) => (
+                    <StockCard key={stock.id} stock={stock} onSelect={handleSelectStock} />
+                  ))}
+                </div>
+              </ScrollArea>
+            </CardContent>
+          </Card>
+        </div>
+        
+        <div>
+          <Tabs defaultValue="active">
+            <TabsList className="w-full mb-2 h-10">
+              <TabsTrigger value="active" className="flex-1 text-sm">กำลังเทรด</TabsTrigger>
+              <TabsTrigger value="history" className="flex-1 text-sm">ประวัติ</TabsTrigger>
+            </TabsList>
+            
+            <TabsContent value="active">
+              <Card className="shadow-sm">
+                <CardHeader className="pb-1 p-3">
+                  <CardTitle className="text-base">การเทรดที่กำลังดำเนินอยู่</CardTitle>
+                </CardHeader>
+                <CardContent className="p-3">
+                  {activeTrades.length === 0 ? (
+                    <div className="py-6 text-center">
+                      <p className="text-muted-foreground text-sm">ไม่มีการเทรดที่กำลังดำเนินอยู่</p>
+                      <p className="text-xs mt-1">เลือกหุ้นเพื่อเริ่มเทรด</p>
+                    </div>
+                  ) : (
+                    <ScrollArea className="h-[200px] pr-2">
+                      {activeTrades.map((trade: StockTrade) => (
+                        <ActiveTradeCard 
+                          key={trade.id} 
+                          trade={trade} 
+                          stock={findStockById(trade.stockId)} 
+                        />
+                      ))}
+                    </ScrollArea>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+            
+            <TabsContent value="history">
+              <Card className="shadow-sm">
+                <CardHeader className="pb-1 p-3">
+                  <CardTitle className="text-base">ประวัติการเทรด</CardTitle>
+                </CardHeader>
+                <CardContent className="p-3">
+                  {tradesHistory.length === 0 ? (
+                    <div className="py-6 text-center">
+                      <p className="text-muted-foreground text-sm">ยังไม่มีประวัติการเทรด</p>
+                      <p className="text-xs mt-1">เลือกหุ้นเพื่อเริ่มเทรด</p>
+                    </div>
+                  ) : (
+                    <ScrollArea className="h-[200px] pr-2">
+                      {tradesHistory
+                        .filter((trade: StockTrade) => trade.status !== 'active')
+                        .map((trade: StockTrade) => (
+                          <TradeHistoryCard 
+                            key={trade.id} 
+                            trade={trade} 
+                            stock={findStockById(trade.stockId)} 
+                          />
+                        ))}
+                    </ScrollArea>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+          </Tabs>
+        </div>
+      </div>
+      
+      {/* Trading Drawer */}
+      <StockTradingDrawer
+        isOpen={isDialogOpen}
+        onClose={handleCloseTradingDialog}
+        stock={selectedStock}
+        onTrade={handleTrade}
+      />
+      
+      {/* Countdown Dialog */}
+      <CountdownDialog
+        isOpen={isCountdownOpen}
+        onClose={() => setIsCountdownOpen(false)}
+        seconds={3}
+        direction={countdownDirection}
+        stock={selectedStock}
+      />
+    </div>
+  );
+}

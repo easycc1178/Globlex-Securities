@@ -1,0 +1,294 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@keyframes flash {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+    color: white;
+  }
+}
+
+.animate-flash {
+  animation: flash 0.5s ease-in-out;
+}
+
+@keyframes float {
+  0% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+  100% {
+    transform: translateY(0);
+  }
+}
+
+@layer base {
+  :root {
+    --primary-color: #16a5a3;
+    --primary-dark: #138e8c;
+    --primary-light: #1dbcba; 
+    --success-color: hsl(160, 65%, 40%);
+    --warning-color: hsl(40, 90%, 55%);
+    --danger-color: hsl(350, 80%, 55%);
+  }
+  
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply font-sans antialiased bg-[#f8f9fb] text-foreground;
+  }
+  
+  input {
+    @apply focus:border-[var(--primary-color)] focus:ring-1 focus:ring-[var(--primary-color)];
+  }
+}
+
+@layer components {
+  .card-gradient {
+    background: linear-gradient(135deg, var(--primary-color), var(--primary-dark));
+    color: white;
+  }
+  
+  .glass-card {
+    @apply bg-white bg-opacity-80 backdrop-blur-md shadow-lg;
+  }
+  
+  .button-primary {
+    @apply bg-primary hover:bg-primary/90 text-white font-medium;
+  }
+  
+  .nav-active {
+    @apply text-[var(--primary-color)] font-semibold;
+  }
+  
+  .input-focus {
+    @apply focus:border-[var(--primary-color)] focus:ring-1 focus:ring-[var(--primary-color)];
+  }
+  
+  .form-input-luxury {
+    @apply h-14 pt-4 border-gray-200 bg-gray-50/50 focus:bg-white transition-all shadow-sm rounded-md;
+  }
+  
+  /* Loan page specific styling */
+  .loan-page input {
+    @apply h-14 pt-4 border-gray-200 bg-gray-50/50 focus:bg-white transition-all shadow-sm rounded-md;
+  }
+  
+  .withdraw-status-pending {
+    @apply bg-amber-100 text-amber-600 rounded-full px-3 py-1 text-xs font-medium;
+  }
+  
+  .withdraw-status-approved {
+    @apply bg-emerald-100 text-emerald-600 rounded-full px-3 py-1 text-xs font-medium;
+  }
+  
+  .withdraw-status-rejected {
+    @apply bg-rose-100 text-rose-600 rounded-full px-3 py-1 text-xs font-medium;
+  }
+  
+  .gradient-bg {
+    background: linear-gradient(135deg, var(--primary-color), var(--primary-dark));
+  }
+  
+  /* === เอฟเฟ็คที่ต้องการ === */
+  
+  /* การเคลื่อนไหวจากล่างขึ้นบน */
+  .animate-slide-up {
+    animation: slideUp 0.5s ease-out forwards;
+  }
+  
+  @keyframes slideUp {
+    from {
+      opacity: 0;
+      transform: translateY(20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  
+  /* การเคลื่อนไหวจากบนลงล่าง */
+  .animate-slide-down {
+    animation: slideDown 0.5s ease-out forwards;
+  }
+  
+  @keyframes slideDown {
+    from {
+      opacity: 0;
+      transform: translateY(-20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  
+  /* การเคลื่อนไหวจากซ้ายไปขวา */
+  .animate-slide-right {
+    animation: slideRight 0.5s ease-out forwards;
+  }
+  
+  @keyframes slideRight {
+    from {
+      opacity: 0;
+      transform: translateX(-20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+  
+  /* การเคลื่อนไหวจากขวาไปซ้าย */
+  .animate-slide-left {
+    animation: slideLeft 0.5s ease-out forwards;
+  }
+  
+  @keyframes slideLeft {
+    from {
+      opacity: 0;
+      transform: translateX(20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+  
+  /* การค่อยๆ ปรากฎขึ้น */
+  .animate-fade-in {
+    animation: fadeIn 0.5s ease-out forwards;
+  }
+  
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  
+  /* การขยายขนาด */
+  .animate-scale-up {
+    animation: scaleUp 0.4s ease-out forwards;
+  }
+  
+  @keyframes scaleUp {
+    from {
+      opacity: 0;
+      transform: scale(0.95);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+  
+  /* การหมุน */
+  .animate-rotate {
+    animation: rotate 0.5s ease-out forwards;
+  }
+  
+  @keyframes rotate {
+    from {
+      opacity: 0;
+      transform: rotate(-10deg);
+    }
+    to {
+      opacity: 1;
+      transform: rotate(0);
+    }
+  }
+  
+  /* การแสดงเป็นคลื่น */
+  .animate-wave {
+    animation: wave 2s ease-in-out infinite;
+  }
+  
+  @keyframes wave {
+    0%, 100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(-5px);
+    }
+  }
+  
+  /* การเน้นเนื้อหา */
+  .animate-pulse-effect {
+    animation: pulseEffect 2s ease-in-out infinite;
+  }
+  
+  @keyframes pulseEffect {
+    0%, 100% {
+      transform: scale(1);
+    }
+    50% {
+      transform: scale(1.05);
+    }
+  }
+  
+  /* การหายไป */
+  .animate-fade-out {
+    animation: fadeOut 0.3s ease-out forwards;
+  }
+  
+  @keyframes fadeOut {
+    from {
+      opacity: 1;
+    }
+    to {
+      opacity: 0;
+    }
+  }
+  
+  /* Stagger Effect - หน่วงเวลาตามลำดับ */
+  .stagger-item:nth-child(1) { animation-delay: 0.1s; }
+  .stagger-item:nth-child(2) { animation-delay: 0.2s; }
+  .stagger-item:nth-child(3) { animation-delay: 0.3s; }
+  .stagger-item:nth-child(4) { animation-delay: 0.4s; }
+  .stagger-item:nth-child(5) { animation-delay: 0.5s; }
+  .stagger-item:nth-child(6) { animation-delay: 0.6s; }
+  .stagger-item:nth-child(7) { animation-delay: 0.7s; }
+  .stagger-item:nth-child(8) { animation-delay: 0.8s; }
+  
+  /* เอฟเฟ็คสำหรับหน้าหลัก */
+  .hero-animation {
+    animation: heroAnimation 0.7s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+  
+  @keyframes heroAnimation {
+    from {
+      opacity: 0;
+      transform: translateY(30px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  
+  /* เอฟเฟ็คสำหรับปุ่มแอคชัน */
+  .button-animation {
+    transition: all 0.2s ease;
+  }
+  
+  .button-animation:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  }
+  
+  .button-animation:active {
+    transform: translateY(0);
+  }
+}

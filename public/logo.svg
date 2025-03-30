@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg 
+   width="300"
+   height="150"
+   viewBox="0 0 300 150"
+   version="1.1"
+   xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="blueGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#0c2552;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#2a60b0;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Main Circle with Gradient -->
+  <circle cx="75" cy="75" r="75" fill="url(#blueGradient)" />
+  
+  <!-- Crescent Shape -->
+  <path d="M 140,75 A 65,65 0 0 1 75,140 65,65 0 0 1 10,75 65,65 0 0 1 75,10" 
+        fill="#2a60b0" />
+  <path d="M 130,75 A 55,55 0 0 1 75,130 55,55 0 0 1 20,75 55,55 0 0 1 75,20" 
+        fill="#1a3f75" />
+  
+  <!-- Logo Text -->
+  <g fill="#eecd38" font-family="Arial, sans-serif" font-weight="bold">
+    <text x="165" y="85" font-size="42">Globlex</text>
+  </g>
+
+  <!-- Tagline -->
+  <g fill="#ffffff" font-family="Arial, sans-serif">
+    <text x="170" y="110" font-size="12">FINANCIAL SERVICES</text>
+  </g>
+</svg>
